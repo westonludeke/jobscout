@@ -1,0 +1,32 @@
+{
+  "name": "jobscout",
+  "version": "1.0.0",
+  "description": "Job Scout - Automated job search using Browserbase Stagehand and Streak CRM integration",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "clean": "rm -rf dist",
+    "test": "jest"
+  },
+  "keywords": [
+    "job-search",
+    "automation",
+    "browserbase",
+    "streak",
+    "stagehand"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0",
+    "tsx": "^4.6.0"
+  },
+  "dependencies": {
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.0"
+  }
+}
