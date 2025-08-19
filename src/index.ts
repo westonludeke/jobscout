@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { config as loadEnv } from 'dotenv';
 import { loadAppConfig } from './config';
+import { BrowserbaseClient } from './services/browserbase';
 
 // Load environment variables
 loadEnv();
@@ -36,5 +37,14 @@ const appConfig = loadAppConfig({
 console.log('Job Scout starting...');
 console.log('Resolved configuration:', JSON.stringify(appConfig, null, 2));
 
-// TODO: Implement job search logic
-console.log('Job search functionality coming soon!');
+async function main() {
+  const browserbase = new BrowserbaseClient(appConfig);
+  const session = await browserbase.startSession();
+  console.log('Browserbase session established:', session);
+  await browserbase.closeSession(session);
+}
+
+main().catch((err) => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
