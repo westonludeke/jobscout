@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppConfig, EnvironmentConfig, JobSource, RuntimeOptions } from '../types';
+import { AppConfig, EnvironmentConfig, JobSource, RuntimeOptions, StreakFieldKeys } from '../types';
 
 const jobSourcesAll: JobSource[] = ['hiringcafe', 'workatastartup', 'ycjobs'];
 
@@ -7,6 +7,11 @@ const EnvSchema = z.object({
   BROWSERBASE_API_KEY: z.string().min(1, 'BROWSERBASE_API_KEY is required'),
   STREAK_API_KEY: z.string().min(1, 'STREAK_API_KEY is required'),
   STREAK_PIPELINE_KEY: z.string().min(1, 'STREAK_PIPELINE_KEY is required'),
+  STREAK_DEFAULT_STAGE_KEY: z.string().optional(),
+  STREAK_FIELD_JOB_TITLE: z.string().optional(),
+  STREAK_FIELD_SOURCE: z.string().optional(),
+  STREAK_FIELD_LOCATION: z.string().optional(),
+  STREAK_FIELD_WEBSITE: z.string().optional(),
   DEFAULT_KEYWORDS: z.string().optional(),
   DEFAULT_LOCATION: z.string().optional(),
   DEFAULT_SALARY_MIN: z.string().optional(),
@@ -45,10 +50,23 @@ export function loadAppConfig(cli: CliArgsInput): AppConfig {
 
   const envRaw = parsedEnv.data;
 
+  const streakFieldKeys: StreakFieldKeys | undefined = (
+    envRaw.STREAK_FIELD_JOB_TITLE || envRaw.STREAK_FIELD_SOURCE || envRaw.STREAK_FIELD_LOCATION || envRaw.STREAK_FIELD_WEBSITE
+  )
+    ? {
+        jobTitle: envRaw.STREAK_FIELD_JOB_TITLE,
+        source: envRaw.STREAK_FIELD_SOURCE,
+        location: envRaw.STREAK_FIELD_LOCATION,
+        website: envRaw.STREAK_FIELD_WEBSITE,
+      }
+    : undefined;
+
   const env: EnvironmentConfig = {
     browserbaseApiKey: envRaw.BROWSERBASE_API_KEY,
     streakApiKey: envRaw.STREAK_API_KEY,
     streakPipelineKey: envRaw.STREAK_PIPELINE_KEY,
+    streakDefaultStageKey: envRaw.STREAK_DEFAULT_STAGE_KEY,
+    streakFieldKeys,
   };
 
   const keywordsFromCli = Array.isArray(cli.keywords) ? cli.keywords : parseCsv(cli.keywords);

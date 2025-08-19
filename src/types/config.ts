@@ -1,4 +1,5 @@
 import type { JobSource, SearchCriteria } from './job';
+import type { StreakFieldKeys } from './streak';
 
 /**
  * Environment variables required by the application.
@@ -7,6 +8,8 @@ export interface EnvironmentConfig {
   browserbaseApiKey: string;
   streakApiKey: string;
   streakPipelineKey: string;
+  streakDefaultStageKey?: string;
+  streakFieldKeys?: StreakFieldKeys;
 }
 
 /**
