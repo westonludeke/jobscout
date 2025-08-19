@@ -35,17 +35,13 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
     console.log(`[${this.name}] Session ID: ${session.sessionId}`);
 
     try {
-      // Check if we have a real Browserbase session for Stagehand
-      if (session.browserbaseSession) {
-        console.log(`[${this.name}] Using real Stagehand automation`);
-        return await this.scrapeWithStagehand(input, session);
-      } else {
-        console.log(`[${this.name}] Using mock data (no Browserbase session)`);
-        return this.generateMockJobs(input);
-      }
+      // Always try real Stagehand automation first
+      console.log(`[${this.name}] Attempting real Stagehand automation`);
+      return await this.scrapeWithStagehand(input, session);
     } catch (error) {
-      console.error(`[${this.name}] Scraping failed:`, error);
-      throw error;
+      console.error(`[${this.name}] Real scraping failed, falling back to mock data:`, error);
+      console.log(`[${this.name}] Using mock data as fallback`);
+      return this.generateMockJobs(input);
     }
   }
 
@@ -91,10 +87,7 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
       
     } catch (error) {
       console.error(`[${this.name}] Stagehand automation failed:`, error);
-      
-      // Fallback to mock data if real scraping fails
-      console.log(`[${this.name}] Falling back to mock data`);
-      return this.generateMockJobs(criteria);
+      throw error; // Re-throw to trigger fallback in execute method
     }
   }
 

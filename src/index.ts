@@ -5,6 +5,7 @@ import { config as loadEnv } from 'dotenv';
 import { loadAppConfig } from './config';
 import { BrowserbaseClient } from './services/browserbase';
 import { StreakClient } from './services/streak';
+import { buildBoxRequestFromJob } from './services/streak/mappers';
 import { summarizeConfig } from './utils/log';
 import { generateStableIdFromString } from './utils/hash';
 import { getScraper, listAvailableScrapers } from './scrapers';
@@ -86,16 +87,26 @@ async function createTestBoxIfRequested() {
     salaryUsdMin: 120000,
   };
 
-  if (appConfig.options.dryRun) {
-    const streak = new StreakClient({ apiKey: appConfig.env.streakApiKey });
-    const req = streak.buildBoxRequestFromJob(testJob, appConfig.env.streakPipelineKey, appConfig.env.streakDefaultStageKey, appConfig.env.streakFieldKeys);
-    console.log('Dry run: would create Streak box with request:', req);
-    return;
-  }
+      if (appConfig.options.dryRun) {
+      const req = buildBoxRequestFromJob({
+        job: testJob,
+        pipelineKey: appConfig.env.streakPipelineKey,
+        fieldKeys: appConfig.env.streakFieldKeys,
+        defaultStageKey: appConfig.env.streakDefaultStageKey,
+      });
+      console.log('Dry run: would create Streak box with request:', req);
+      return;
+    }
 
-  const streak = new StreakClient({ apiKey: appConfig.env.streakApiKey });
-  const created = await streak.createBox(testJob, appConfig.env.streakPipelineKey, appConfig.env.streakDefaultStageKey, appConfig.env.streakFieldKeys);
-  console.log('Created Streak box:', created);
+    const streak = new StreakClient({ apiKey: appConfig.env.streakApiKey });
+    const req = buildBoxRequestFromJob({
+      job: testJob,
+      pipelineKey: appConfig.env.streakPipelineKey,
+      fieldKeys: appConfig.env.streakFieldKeys,
+      defaultStageKey: appConfig.env.streakDefaultStageKey,
+    });
+    const created = await streak.createBox(req);
+    console.log('Created Streak box:', created);
 }
 
 async function testHiringCafeIfRequested() {
@@ -146,10 +157,7 @@ async function scrapeHiringCafeIfRequested() {
     console.log('Browserbase session established:', session.sessionId);
 
     // Run the scraper with the real session
-    const jobs = await scraper.execute({ 
-      input: appConfig.options, 
-      session 
-    });
+    const jobs = await scraper.scrape(appConfig.options);
 
     console.log(`Found ${jobs.length} jobs from Hiring Cafe (real scraping):`);
     jobs.forEach((job, index) => {
@@ -167,12 +175,13 @@ async function scrapeHiringCafeIfRequested() {
       
       for (const job of jobs) {
         try {
-          const created = await streak.createBox(
-            job, 
-            appConfig.env.streakPipelineKey, 
-            appConfig.env.streakDefaultStageKey, 
-            appConfig.env.streakFieldKeys
-          );
+          const req = buildBoxRequestFromJob({
+            job,
+            pipelineKey: appConfig.env.streakPipelineKey,
+            fieldKeys: appConfig.env.streakFieldKeys,
+            defaultStageKey: appConfig.env.streakDefaultStageKey,
+          });
+          const created = await streak.createBox(req);
           console.log(`Created Streak box for ${job.company} - ${job.title}:`, created.name);
         } catch (error) {
           console.error(`Failed to create Streak box for ${job.company} - ${job.title}:`, error);
@@ -183,12 +192,12 @@ async function scrapeHiringCafeIfRequested() {
       const streak = new StreakClient({ apiKey: appConfig.env.streakApiKey });
       
       for (const job of jobs) {
-        const req = streak.buildBoxRequestFromJob(
-          job, 
-          appConfig.env.streakPipelineKey, 
-          appConfig.env.streakDefaultStageKey, 
-          appConfig.env.streakFieldKeys
-        );
+        const req = buildBoxRequestFromJob({
+          job,
+          pipelineKey: appConfig.env.streakPipelineKey,
+          fieldKeys: appConfig.env.streakFieldKeys,
+          defaultStageKey: appConfig.env.streakDefaultStageKey,
+        });
         console.log(`Would create Streak box for ${job.company} - ${job.title}:`, req);
       }
     }

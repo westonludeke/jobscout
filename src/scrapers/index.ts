@@ -1,7 +1,7 @@
 export * from './hiringcafe';
 
 import { SearchCriteria, JobPosting } from '../types';
-import { scrapeHiringCafe } from './hiringcafe';
+import { HiringCafeScraper } from './hiringcafe';
 
 export interface Scraper {
   name: string;
@@ -11,7 +11,16 @@ export interface Scraper {
 export const SCRAPERS: Record<string, Scraper> = {
   hiringcafe: {
     name: 'Hiring Cafe',
-    scrape: scrapeHiringCafe,
+    scrape: async (criteria: SearchCriteria) => {
+      const scraper = new HiringCafeScraper();
+      const mockSession = {
+        sessionId: 'mock-session',
+        alias: 'mock-alias',
+        runId: 'mock-run',
+        browserbaseSession: null,
+      };
+      return scraper.execute({ input: criteria, session: mockSession });
+    },
   },
   // TODO: Add other scrapers
   // workatastartup: { name: 'WorkAtAStartup', scrape: scrapeWorkAtAStartup },

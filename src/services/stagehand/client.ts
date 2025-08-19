@@ -1,7 +1,8 @@
 import { BrowserSession } from '../browserbase';
 import { z } from 'zod';
+import { Stagehand } from '@browserbasehq/stagehand';
 
-export interface StagehandExtractOptions<T extends z.ZodType> {
+export interface StagehandExtractOptions<T extends z.ZodObject<any>> {
   schema: T;
   instruction: string;
 }
@@ -22,9 +23,47 @@ export interface StagehandActResult {
 
 export class StagehandClient {
   private session: BrowserSession;
+  private stagehand: Stagehand | null = null;
+  private initialized = false;
 
   constructor(session: BrowserSession) {
     this.session = session;
+  }
+
+  /**
+   * Initialize Stagehand with the Browserbase session
+   */
+  private async initialize(): Promise<void> {
+    if (this.initialized) return;
+
+    if (!this.session.browserbaseSession) {
+      throw new Error('No Browserbase session available for Stagehand');
+    }
+
+    try {
+      // Initialize Stagehand with the Browserbase session
+      this.stagehand = new Stagehand({
+        env: 'BROWSERBASE',
+        apiKey: process.env.BROWSERBASE_API_KEY!,
+        projectId: this.session.browserbaseSession.projectId,
+        browserbaseSessionID: this.session.sessionId,
+        modelName: 'gpt-4o-mini', // Use a cost-effective model for scraping
+        modelClientOptions: {
+          apiKey: process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY,
+        },
+        verbose: 1, // Enable some logging
+        domSettleTimeoutMs: 30000, // 30 second timeout for actions
+      });
+
+      // Initialize Stagehand
+      await this.stagehand.init();
+
+      this.initialized = true;
+      console.log(`[StagehandClient] Initialized with session: ${this.session.sessionId}`);
+    } catch (error) {
+      console.error(`[StagehandClient] Failed to initialize Stagehand:`, error);
+      throw new Error(`Stagehand initialization failed: ${error}`);
+    }
   }
 
   /**
@@ -33,40 +72,50 @@ export class StagehandClient {
   async goto(url: string): Promise<void> {
     console.log(`[StagehandClient] Navigating to: ${url}`);
     
-    // TODO: Implement real Stagehand navigation
-    // This will be called when we have a real Browserbase session with Stagehand
-    if (!this.session.browserbaseSession) {
-      throw new Error('No Browserbase session available for Stagehand');
+    await this.initialize();
+    
+    if (!this.stagehand) {
+      throw new Error('Stagehand not initialized');
     }
-    
-    // TODO: Use real Stagehand API
-    // await this.session.browserbaseSession.stagehand.goto(url);
-    
-    console.log(`[StagehandClient] Successfully navigated to: ${url}`);
+
+    try {
+      await this.stagehand.page.goto(url);
+      console.log(`[StagehandClient] Successfully navigated to: ${url}`);
+    } catch (error) {
+      console.error(`[StagehandClient] Navigation failed:`, error);
+      throw new Error(`Failed to navigate to ${url}: ${error}`);
+    }
   }
 
   /**
    * Extract data from the current page using AI
    */
-  async extract<T extends z.ZodType>(
+  async extract<T extends z.ZodObject<any>>(
     options: StagehandExtractOptions<T>
   ): Promise<StagehandExtractResult<z.infer<T>>> {
     console.log(`[StagehandClient] Extracting data with instruction: ${options.instruction}`);
     
-    // TODO: Implement real Stagehand extraction
-    // This will be called when we have a real Browserbase session with Stagehand
-    if (!this.session.browserbaseSession) {
-      throw new Error('No Browserbase session available for Stagehand');
+    await this.initialize();
+    
+    if (!this.stagehand) {
+      throw new Error('Stagehand not initialized');
     }
-    
-    // TODO: Use real Stagehand API
-    // const result = await this.session.browserbaseSession.stagehand.extract({
-    //   schema: options.schema,
-    //   instruction: options.instruction,
-    // });
-    
-    // For now, return a mock result
-    throw new Error('Real Stagehand extraction not yet implemented');
+
+    try {
+      const result = await this.stagehand.page.extract({
+        schema: options.schema as any,
+        instruction: options.instruction,
+      });
+
+      console.log(`[StagehandClient] Extraction successful`);
+      return {
+        data: result as z.infer<T>,
+        success: true,
+      };
+    } catch (error) {
+      console.error(`[StagehandClient] Extraction failed:`, error);
+      throw new Error(`Failed to extract data: ${error}`);
+    }
   }
 
   /**
@@ -75,19 +124,26 @@ export class StagehandClient {
   async act(options: StagehandActOptions): Promise<StagehandActResult> {
     console.log(`[StagehandClient] Performing action: ${options.instruction}`);
     
-    // TODO: Implement real Stagehand actions
-    // This will be called when we have a real Browserbase session with Stagehand
-    if (!this.session.browserbaseSession) {
-      throw new Error('No Browserbase session available for Stagehand');
+    await this.initialize();
+    
+    if (!this.stagehand) {
+      throw new Error('Stagehand not initialized');
     }
-    
-    // TODO: Use real Stagehand API
-    // const result = await this.session.browserbaseSession.stagehand.act({
-    //   instruction: options.instruction,
-    // });
-    
-    // For now, return a mock result
-    throw new Error('Real Stagehand actions not yet implemented');
+
+    try {
+      const result = await this.stagehand.page.act({
+        action: options.instruction,
+      });
+
+      console.log(`[StagehandClient] Action completed: ${result.message}`);
+      return {
+        success: result.success,
+        message: result.message,
+      };
+    } catch (error) {
+      console.error(`[StagehandClient] Action failed:`, error);
+      throw new Error(`Failed to perform action: ${error}`);
+    }
   }
 
   /**
@@ -96,10 +152,23 @@ export class StagehandClient {
   async waitForLoad(): Promise<void> {
     console.log(`[StagehandClient] Waiting for page to load...`);
     
-    // TODO: Implement real wait logic
-    // await this.session.browserbaseSession.stagehand.waitForLoad();
+    await this.initialize();
     
-    console.log(`[StagehandClient] Page loaded successfully`);
+    if (!this.stagehand) {
+      throw new Error('Stagehand not initialized');
+    }
+
+    try {
+      // Use Stagehand's built-in wait functionality
+      await this.stagehand.page.act({
+        action: 'Wait for the page to fully load and settle',
+      });
+      
+      console.log(`[StagehandClient] Page loaded successfully`);
+    } catch (error) {
+      console.error(`[StagehandClient] Wait failed:`, error);
+      // Don't throw here, as this is often not critical
+    }
   }
 
   /**
@@ -108,10 +177,36 @@ export class StagehandClient {
   async takeScreenshot(): Promise<string> {
     console.log(`[StagehandClient] Taking screenshot...`);
     
-    // TODO: Implement real screenshot capture
-    // const screenshot = await this.session.browserbaseSession.stagehand.screenshot();
+    await this.initialize();
     
-    // For now, return a placeholder
-    return 'screenshot-placeholder';
+    if (!this.stagehand) {
+      throw new Error('Stagehand not initialized');
+    }
+
+    try {
+      // Use Stagehand's observe functionality to get page info
+      const observations = await this.stagehand.page.observe();
+      
+      // For now, return a placeholder since screenshot capture might need additional setup
+      console.log(`[StagehandClient] Screenshot placeholder - page has ${observations.length} observations`);
+      return 'screenshot-placeholder';
+    } catch (error) {
+      console.error(`[StagehandClient] Screenshot failed:`, error);
+      return 'screenshot-error';
+    }
+  }
+
+  /**
+   * Clean up resources
+   */
+  async cleanup(): Promise<void> {
+    if (this.stagehand && this.initialized) {
+      try {
+        await this.stagehand.close();
+        console.log(`[StagehandClient] Cleaned up Stagehand resources`);
+      } catch (error) {
+        console.error(`[StagehandClient] Cleanup failed:`, error);
+      }
+    }
   }
 }
