@@ -39,4 +39,5 @@ export interface StreakFieldKeys {
   source?: string;
   location?: string;
   website?: string;
+  [key: string]: string | undefined;
 }

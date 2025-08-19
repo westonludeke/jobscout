@@ -7,6 +7,7 @@ import { BrowserbaseClient } from './services/browserbase';
 import { StreakClient, buildBoxRequestFromJob } from './services/streak';
 import { summarizeConfig } from './utils/log';
 import { generateStableIdFromString } from './utils/hash';
+import { getScraper, listAvailableScrapers } from './scrapers';
 import type { JobPosting } from './types';
 
 // Load environment variables
@@ -28,7 +29,8 @@ program
   .option('--list-pipelines', 'List Streak pipelines available for your API key')
   .option('--list-boxes', 'List boxes in the configured pipeline')
   .option('--verify-streak', 'Verify Streak API connectivity and pipeline access')
-  .option('--create-test-box', 'Create a test Box in Streak (respects --dry-run)');
+  .option('--create-test-box', 'Create a test Box in Streak (respects --dry-run)')
+  .option('--test-hiringcafe', 'Test Hiring Cafe scraper with mock data');
 
 program.parse();
 
@@ -100,11 +102,39 @@ async function createTestBoxIfRequested() {
   console.log('Created Streak box:', created);
 }
 
+async function testHiringCafeIfRequested() {
+  if (!options.testHiringcafe) return;
+  
+  console.log('Testing Hiring Cafe scraper...');
+  console.log('Available scrapers:', listAvailableScrapers());
+  
+  const scraper = getScraper('hiringcafe');
+  if (!scraper) {
+    console.error('Hiring Cafe scraper not found!');
+    return;
+  }
+
+  try {
+    const jobs = await scraper.scrape(appConfig.options);
+    console.log(`Found ${jobs.length} jobs from Hiring Cafe:`);
+    jobs.forEach((job, index) => {
+      console.log(`${index + 1}. ${job.company} - ${job.title} (${job.location})`);
+      console.log(`   URL: ${job.url}`);
+      console.log(`   Tags: ${job.tags.join(', ')}`);
+      console.log(`   Salary: $${job.salaryUsdMin?.toLocaleString() || 'N/A'}`);
+      console.log('');
+    });
+  } catch (error) {
+    console.error('Hiring Cafe scraper test failed:', error);
+  }
+}
+
 async function main() {
   await listPipelinesIfRequested();
   await verifyStreakIfRequested();
   await listBoxesIfRequested();
   await createTestBoxIfRequested();
+  await testHiringCafeIfRequested();
 
   const browserbase = new BrowserbaseClient(appConfig);
   const session = await browserbase.startSession();
