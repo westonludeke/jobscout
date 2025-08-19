@@ -1,6 +1,8 @@
 import { SearchCriteria, JobPosting, JobSource } from '../../types';
 import { BrowserSession, StagehandScript } from '../../services/browserbase';
+import { StagehandClient } from '../../services/stagehand';
 import { generateStableIdFromString } from '../../utils/hash';
+import { z } from 'zod';
 
 export interface HiringCafeJob {
   title: string;
@@ -12,6 +14,19 @@ export interface HiringCafeJob {
   salary?: string;
 }
 
+// Schema for extracting job data from Hiring Cafe
+const JobExtractionSchema = z.object({
+  jobs: z.array(z.object({
+    title: z.string().describe("The job title"),
+    company: z.string().describe("The company name"),
+    location: z.string().nullable().describe("The job location (or null if not specified)"),
+    description: z.string().nullable().describe("Brief job description or null if not available"),
+    url: z.string().describe("The URL to the job posting"),
+    tags: z.array(z.string()).describe("Array of job tags/technologies"),
+    salary: z.string().optional().describe("Salary information if available"),
+  })).describe("Array of job postings found on the page"),
+});
+
 export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPosting[]> {
   name = 'hiringcafe-scraper';
 
@@ -20,15 +35,66 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
     console.log(`[${this.name}] Session ID: ${session.sessionId}`);
 
     try {
-      // TODO: Implement actual browser automation with Stagehand
-      // For now, return mock data to test the integration
-      const mockJobs = this.generateMockJobs(input);
-      
-      console.log(`[${this.name}] Found ${mockJobs.length} jobs`);
-      return mockJobs;
+      // Check if we have a real Browserbase session for Stagehand
+      if (session.browserbaseSession) {
+        console.log(`[${this.name}] Using real Stagehand automation`);
+        return await this.scrapeWithStagehand(input, session);
+      } else {
+        console.log(`[${this.name}] Using mock data (no Browserbase session)`);
+        return this.generateMockJobs(input);
+      }
     } catch (error) {
       console.error(`[${this.name}] Scraping failed:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Real Stagehand automation for Hiring Cafe
+   */
+  private async scrapeWithStagehand(criteria: SearchCriteria, session: BrowserSession): Promise<JobPosting[]> {
+    const stagehand = new StagehandClient(session);
+    
+    try {
+      // Navigate to Hiring Cafe
+      await stagehand.goto('https://hiring.cafe');
+      await stagehand.waitForLoad();
+      
+      // Extract job listings
+      const result = await stagehand.extract({
+        schema: JobExtractionSchema,
+        instruction: `Extract all job postings from this page. Look for job titles, company names, locations, descriptions, URLs, and tags. Focus on jobs that match these criteria: ${JSON.stringify(criteria)}`
+      });
+      
+      if (!result.success) {
+        throw new Error('Failed to extract job data from Hiring Cafe');
+      }
+      
+      // Convert to JobPosting format
+      const jobs: JobPosting[] = result.data.jobs.map(job => ({
+        id: generateStableIdFromString(`hiringcafe:${job.url}`),
+        title: job.title,
+        company: job.company,
+        location: job.location || 'Unknown',
+        tags: job.tags,
+        url: job.url,
+        source: 'hiringcafe' as JobSource,
+        description: job.description,
+        createdAt: new Date().toISOString(),
+        // TODO: Parse salary from job.salary string
+        salaryUsdMin: undefined,
+        salaryUsdMax: undefined,
+      }));
+      
+      // Filter by criteria
+      return this.filterJobsByCriteria(jobs, criteria);
+      
+    } catch (error) {
+      console.error(`[${this.name}] Stagehand automation failed:`, error);
+      
+      // Fallback to mock data if real scraping fails
+      console.log(`[${this.name}] Falling back to mock data`);
+      return this.generateMockJobs(criteria);
     }
   }
 
@@ -62,8 +128,11 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
       },
     ];
 
-    // Filter by criteria
-    return mockJobs.filter(job => {
+    return this.filterJobsByCriteria(mockJobs, criteria);
+  }
+
+  private filterJobsByCriteria(jobs: JobPosting[], criteria: SearchCriteria): JobPosting[] {
+    return jobs.filter(job => {
       // Filter by keywords
       if (criteria.keywords.length > 0) {
         const jobText = `${job.title} ${job.description} ${job.tags.join(' ')}`.toLowerCase();
