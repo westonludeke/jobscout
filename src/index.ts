@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { config } from 'dotenv';
+import { config as loadEnv } from 'dotenv';
+import { loadAppConfig } from './config';
 
 // Load environment variables
-config();
+loadEnv();
 
 const program = new Command();
 
@@ -24,8 +25,16 @@ program.parse();
 
 const options = program.opts();
 
+const appConfig = loadAppConfig({
+  keywords: options.keywords,
+  remoteOnly: options.remoteOnly,
+  location: options.location,
+  salaryMin: options.salaryMin,
+  dryRun: options.dryRun,
+});
+
 console.log('Job Scout starting...');
-console.log('Options:', options);
+console.log('Resolved configuration:', JSON.stringify(appConfig, null, 2));
 
 // TODO: Implement job search logic
 console.log('Job search functionality coming soon!');

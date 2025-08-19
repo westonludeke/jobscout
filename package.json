@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "commander": "^11.1.0",
-    "dotenv": "^16.3.0"
+    "dotenv": "^16.3.0",
+    "zod": "^3.23.8"
   }
 }
