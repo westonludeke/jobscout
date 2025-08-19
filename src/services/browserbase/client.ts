@@ -1,3 +1,4 @@
+import Browserbase from '@browserbasehq/sdk';
 import { AppConfig } from '../../types';
 import { generateRunId, generateSessionAlias } from '../../utils/id';
 
@@ -8,6 +9,8 @@ export interface BrowserSession {
   alias: string;
   /** Correlation ID for an orchestrated run. */
   runId: string;
+  /** Browserbase session instance. */
+  browserbaseSession: any;
 }
 
 export interface StagehandScript<Input, Output> {
@@ -15,37 +18,85 @@ export interface StagehandScript<Input, Output> {
   name: string;
   /**
    * Execute the script logic within an existing browser session.
-   * In the future this will receive a Stagehand/Browser context.
+   * Receives the Browserbase session context for automation.
    */
   execute: (args: { input: Input; session: BrowserSession }) => Promise<Output>;
 }
 
 export class BrowserbaseClient {
-  private readonly apiKey: string;
+  private readonly browserbase: Browserbase;
 
   constructor(config: AppConfig) {
-    this.apiKey = config.env.browserbaseApiKey;
+    this.browserbase = new Browserbase({
+      apiKey: config.env.browserbaseApiKey,
+    });
   }
 
   /**
-   * Start a new browser session. For now, this returns a stub session with generated IDs.
-   * Replace with real Browserbase SDK session creation later.
+   * List available projects to find a valid project ID.
    */
-  async startSession(options?: { alias?: string; runId?: string }): Promise<BrowserSession> {
+  async listProjects(): Promise<any[]> {
+    try {
+      const projects = await this.browserbase.projects.list();
+      return projects || [];
+    } catch (error) {
+      console.warn(`Warning: Could not list projects: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+  }
+
+  /**
+   * Start a new browser session using the real Browserbase SDK.
+   */
+  async startSession(options?: { alias?: string; runId?: string; projectId?: string }): Promise<BrowserSession> {
     const runId = options?.runId ?? generateRunId();
     const alias = options?.alias ?? generateSessionAlias();
 
-    // TODO: Integrate with Browserbase SDK to create a real session and obtain sessionId
-    const mockSessionId = `local-${alias}-${runId}`;
+    try {
+      let projectId = options?.projectId;
+      
+      // If no project ID provided, try to find one
+      if (!projectId) {
+        const projects = await this.listProjects();
+        if (projects.length > 0) {
+          projectId = projects[0].id;
+          console.log(`Using project: ${projects[0].name} (${projectId})`);
+        } else {
+          // Try without project ID (some accounts might not require it)
+          console.log('No projects found, attempting session creation without project ID');
+        }
+      }
 
-    return { sessionId: mockSessionId, alias, runId };
+      // Create a real Browserbase session using the correct API
+      const sessionParams: any = {};
+      if (projectId) {
+        sessionParams.projectId = projectId;
+      }
+
+      const browserbaseSession = await this.browserbase.sessions.create(sessionParams);
+      
+      return {
+        sessionId: browserbaseSession.id,
+        alias,
+        runId,
+        browserbaseSession,
+      };
+    } catch (error) {
+      throw new Error(`Failed to start Browserbase session: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
-   * Close the active session (no-op until real SDK integration).
+   * Close the active session using the real SDK.
    */
-  async closeSession(_session: BrowserSession): Promise<void> {
-    // TODO: Close session via Browserbase SDK
+  async closeSession(session: BrowserSession): Promise<void> {
+    try {
+      if (session.browserbaseSession && typeof session.browserbaseSession.close === 'function') {
+        await session.browserbaseSession.close();
+      }
+    } catch (error) {
+      console.warn(`Warning: Failed to close Browserbase session ${session.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
