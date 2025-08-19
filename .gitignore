@@ -77,3 +77,6 @@ jspm_packages/
 
 # DynamoDB Local files
 .dynamodb/
+
+# Internal agent guidance (kept local only)
+agents/
