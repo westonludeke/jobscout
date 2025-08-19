@@ -28,8 +28,14 @@ function parseCsv(value?: string): string[] {
 function parseNumber(value?: string | number): number | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
-  const n = Number(value);
+  const n = Number((value as string).trim?.() ?? value);
   return Number.isFinite(n) ? n : undefined;
+}
+
+function trimOrUndefined(value?: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const t = value.trim();
+  return t.length > 0 ? t : undefined;
 }
 
 export interface CliArgsInput {
@@ -54,28 +60,28 @@ export function loadAppConfig(cli: CliArgsInput): AppConfig {
     envRaw.STREAK_FIELD_JOB_TITLE || envRaw.STREAK_FIELD_SOURCE || envRaw.STREAK_FIELD_LOCATION || envRaw.STREAK_FIELD_WEBSITE
   )
     ? {
-        jobTitle: envRaw.STREAK_FIELD_JOB_TITLE,
-        source: envRaw.STREAK_FIELD_SOURCE,
-        location: envRaw.STREAK_FIELD_LOCATION,
-        website: envRaw.STREAK_FIELD_WEBSITE,
+        jobTitle: trimOrUndefined(envRaw.STREAK_FIELD_JOB_TITLE),
+        source: trimOrUndefined(envRaw.STREAK_FIELD_SOURCE),
+        location: trimOrUndefined(envRaw.STREAK_FIELD_LOCATION),
+        website: trimOrUndefined(envRaw.STREAK_FIELD_WEBSITE),
       }
     : undefined;
 
   const env: EnvironmentConfig = {
-    browserbaseApiKey: envRaw.BROWSERBASE_API_KEY,
-    streakApiKey: envRaw.STREAK_API_KEY,
-    streakPipelineKey: envRaw.STREAK_PIPELINE_KEY,
-    streakDefaultStageKey: envRaw.STREAK_DEFAULT_STAGE_KEY,
+    browserbaseApiKey: envRaw.BROWSERBASE_API_KEY.trim(),
+    streakApiKey: envRaw.STREAK_API_KEY.trim(),
+    streakPipelineKey: envRaw.STREAK_PIPELINE_KEY.trim(),
+    streakDefaultStageKey: trimOrUndefined(envRaw.STREAK_DEFAULT_STAGE_KEY),
     streakFieldKeys,
   };
 
   const keywordsFromCli = Array.isArray(cli.keywords) ? cli.keywords : parseCsv(cli.keywords);
-  const defaultKeywords = parseCsv(envRaw.DEFAULT_KEYWORDS);
+  const defaultKeywords = parseCsv(trimOrUndefined(envRaw.DEFAULT_KEYWORDS));
 
   const runtime: RuntimeOptions = {
     keywords: keywordsFromCli.length > 0 ? keywordsFromCli : defaultKeywords,
     remoteOnly: cli.remoteOnly ?? false,
-    location: cli.location ?? envRaw.DEFAULT_LOCATION,
+    location: cli.location ?? trimOrUndefined(envRaw.DEFAULT_LOCATION),
     minimumSalaryUsd: parseNumber(cli.salaryMin) ?? parseNumber(envRaw.DEFAULT_SALARY_MIN),
     dryRun: cli.dryRun ?? false,
     sources: (cli.sources && cli.sources.length > 0 ? cli.sources : jobSourcesAll),

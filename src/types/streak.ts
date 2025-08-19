@@ -25,6 +25,11 @@ export interface StreakBox {
   lastUpdatedTimestamp: number;
 }
 
+export interface StreakPipeline {
+  key: string;
+  name: string;
+}
+
 /**
  * Logical mapping of our domain fields to Streak field keys.
  * The values should be Streak custom field keys configured in the target pipeline.
