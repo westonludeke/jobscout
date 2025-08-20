@@ -14,7 +14,7 @@ export interface HiringCafeJob {
   salary?: string;
 }
 
-// Schema for extracting job data from Hiring Cafe
+// Schema for extracting job data from Hiring Cafe search results
 const JobExtractionSchema = z.object({
   jobs: z.array(z.object({
     title: z.string().describe("The job title"),
@@ -26,6 +26,13 @@ const JobExtractionSchema = z.object({
     salary: z.string().optional().describe("Salary information if available"),
   })).describe("Array of job postings found on the page"),
 });
+
+// DevRel job title keywords to match
+const DEVREL_KEYWORDS = [
+  'Developer Relations',
+  'DevRel', 
+  'Developer Advocate'
+];
 
 export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPosting[]> {
   name = 'hiringcafe-scraper';
@@ -56,18 +63,24 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
       await stagehand.goto('https://hiring.cafe');
       await stagehand.waitForLoad();
       
+      // Search for DevRel jobs
+      await this.performDevRelSearch(stagehand);
+      
       // Extract job listings
       const result = await stagehand.extract({
         schema: JobExtractionSchema,
-        instruction: `Extract all job postings from this page. Look for job titles, company names, locations, descriptions, URLs, and tags. Focus on jobs that match these criteria: ${JSON.stringify(criteria)}`
+        instruction: `Extract all job postings from the search results page. Look for job titles, company names, locations, descriptions, URLs, and tags. Focus on jobs that match DevRel criteria.`
       });
       
       if (!result.success) {
         throw new Error('Failed to extract job data from Hiring Cafe');
       }
       
+      // Filter jobs by DevRel criteria
+      const devrelJobs = this.filterDevRelJobs(result.data.jobs);
+      
       // Convert to JobPosting format
-      const jobs: JobPosting[] = result.data.jobs.map(job => ({
+      const jobs: JobPosting[] = devrelJobs.map(job => ({
         id: generateStableIdFromString(`hiringcafe:${job.url}`),
         title: job.title,
         company: job.company,
@@ -82,7 +95,7 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
         salaryUsdMax: undefined,
       }));
       
-      // Filter by criteria
+      // Apply additional criteria filtering
       return this.filterJobsByCriteria(jobs, criteria);
       
     } catch (error) {
@@ -91,24 +104,68 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
     }
   }
 
+  /**
+   * Perform DevRel-specific search on Hiring Cafe
+   */
+  private async performDevRelSearch(stagehand: StagehandClient): Promise<void> {
+    console.log(`[${this.name}] Performing DevRel search...`);
+    
+    try {
+      // Search for "Developer Relations"
+      await stagehand.act({
+        instruction: 'Find the search bar and enter "Developer Relations" as the search term'
+      });
+      
+      // Set the "Posted within" filter to "1 week"
+      await stagehand.act({
+        instruction: 'Find the "Posted within" dropdown filter and change it from "3 months" to "1 week"'
+      });
+      
+      // Submit the search
+      await stagehand.act({
+        instruction: 'Submit the search or press Enter to search for Developer Relations jobs'
+      });
+      
+      // Wait for results to load
+      await stagehand.waitForLoad();
+      
+      console.log(`[${this.name}] DevRel search completed`);
+    } catch (error) {
+      console.error(`[${this.name}] Search failed:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Filter jobs to only include DevRel-related positions
+   */
+  private filterDevRelJobs(jobs: HiringCafeJob[]): HiringCafeJob[] {
+    return jobs.filter(job => {
+      const title = job.title.toLowerCase();
+      return DEVREL_KEYWORDS.some(keyword => 
+        title.includes(keyword.toLowerCase())
+      );
+    });
+  }
+
   private generateMockJobs(criteria: SearchCriteria): JobPosting[] {
     const mockJobs: JobPosting[] = [
       {
         id: generateStableIdFromString('hiringcafe:https://hiring.cafe/job/1'),
-        title: 'Senior DevRel Engineer',
+        title: 'Senior Developer Relations Engineer',
         company: 'TechCorp',
         location: 'Remote',
         tags: ['devrel', 'ai', 'typescript'],
         url: 'https://hiring.cafe/job/1',
         source: 'hiringcafe' as JobSource,
-        description: 'Join our team as a Senior DevRel Engineer...',
+        description: 'Join our team as a Senior Developer Relations Engineer...',
         createdAt: new Date().toISOString(),
         salaryUsdMin: 120000,
         salaryUsdMax: 160000,
       },
       {
         id: generateStableIdFromString('hiringcafe:https://hiring.cafe/job/2'),
-        title: 'AI Developer Advocate',
+        title: 'Developer Advocate',
         company: 'AI Startup',
         location: 'San Francisco',
         tags: ['devrel', 'ai', 'python'],
@@ -119,6 +176,19 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
         salaryUsdMin: 100000,
         salaryUsdMax: 140000,
       },
+      {
+        id: generateStableIdFromString('hiringcafe:https://hiring.cafe/job/3'),
+        title: 'Developer Relations Manager',
+        company: 'Cloud Platform',
+        location: 'Remote',
+        tags: ['devrel', 'cloud', 'api'],
+        url: 'https://hiring.cafe/job/3',
+        source: 'hiringcafe' as JobSource,
+        description: 'Lead our developer relations strategy...',
+        createdAt: new Date().toISOString(),
+        salaryUsdMin: 130000,
+        salaryUsdMax: 170000,
+      },
     ];
 
     return this.filterJobsByCriteria(mockJobs, criteria);
@@ -126,7 +196,7 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
 
   private filterJobsByCriteria(jobs: JobPosting[], criteria: SearchCriteria): JobPosting[] {
     return jobs.filter(job => {
-      // Filter by keywords
+      // Filter by keywords (additional to DevRel filtering)
       if (criteria.keywords.length > 0) {
         const jobText = `${job.title} ${job.description} ${job.tags.join(' ')}`.toLowerCase();
         const hasKeyword = criteria.keywords.some(keyword => 

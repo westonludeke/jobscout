@@ -148,6 +148,35 @@ async function scrapeHiringCafeIfRequested() {
     return;
   }
 
+  // In dry-run mode, use mock data to avoid Browserbase session limits
+  if (appConfig.options.dryRun) {
+    console.log('Dry-run mode: using mock data to avoid Browserbase session limits');
+    const jobs = await scraper.scrape(appConfig.options);
+    
+    console.log(`Found ${jobs.length} jobs from Hiring Cafe (mock data):`);
+    jobs.forEach((job, index) => {
+      console.log(`${index + 1}. ${job.company} - ${job.title} (${job.location})`);
+      console.log(`   URL: ${job.url}`);
+      console.log(`   Tags: ${job.tags.join(', ')}`);
+      console.log(`   Salary: $${job.salaryUsdMin?.toLocaleString() || 'N/A'}`);
+      console.log('');
+    });
+
+    console.log('Dry run mode: would create Streak boxes for found jobs');
+    const streak = new StreakClient({ apiKey: appConfig.env.streakApiKey });
+    
+    for (const job of jobs) {
+      const req = buildBoxRequestFromJob({
+        job,
+        pipelineKey: appConfig.env.streakPipelineKey,
+        fieldKeys: appConfig.env.streakFieldKeys,
+        defaultStageKey: appConfig.env.streakDefaultStageKey,
+      });
+      console.log(`Would create Streak box for ${job.company} - ${job.title}:`, req);
+    }
+    return;
+  }
+
   const browserbase = new BrowserbaseClient(appConfig);
   let session: any = null;
   
@@ -168,8 +197,8 @@ async function scrapeHiringCafeIfRequested() {
       console.log('');
     });
 
-    // Create Streak boxes if not in dry-run mode
-    if (!appConfig.options.dryRun && jobs.length > 0) {
+    // Create Streak boxes for found jobs
+    if (jobs.length > 0) {
       console.log('Creating Streak boxes for found jobs...');
       const streak = new StreakClient({ apiKey: appConfig.env.streakApiKey });
       
@@ -186,19 +215,6 @@ async function scrapeHiringCafeIfRequested() {
         } catch (error) {
           console.error(`Failed to create Streak box for ${job.company} - ${job.title}:`, error);
         }
-      }
-    } else if (appConfig.options.dryRun && jobs.length > 0) {
-      console.log('Dry run mode: would create Streak boxes for found jobs');
-      const streak = new StreakClient({ apiKey: appConfig.env.streakApiKey });
-      
-      for (const job of jobs) {
-        const req = buildBoxRequestFromJob({
-          job,
-          pipelineKey: appConfig.env.streakPipelineKey,
-          fieldKeys: appConfig.env.streakFieldKeys,
-          defaultStageKey: appConfig.env.streakDefaultStageKey,
-        });
-        console.log(`Would create Streak box for ${job.company} - ${job.title}:`, req);
       }
     }
 
