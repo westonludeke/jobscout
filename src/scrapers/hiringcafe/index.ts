@@ -12,18 +12,20 @@ export interface HiringCafeJob {
   url: string;
   tags: string[];
   salary?: string;
+  jobType?: string;
 }
 
 // Schema for extracting job data from Hiring Cafe search results
 const JobExtractionSchema = z.object({
   jobs: z.array(z.object({
-    title: z.string().describe("The job title"),
-    company: z.string().describe("The company name"),
-    location: z.string().nullable().describe("The job location (or null if not specified)"),
-    description: z.string().nullable().describe("Brief job description or null if not available"),
-    url: z.string().describe("The URL to the job posting"),
-    tags: z.array(z.string()).describe("Array of job tags/technologies"),
+    title: z.string().describe("The job title (e.g., 'Developer Relations Manager')"),
+    company: z.string().describe("The company name (extract from @ symbol if present, e.g., '@ Gladia' becomes 'Gladia')"),
+    location: z.string().nullable().describe("The job location (e.g., 'Remote', 'San Francisco')"),
+    description: z.string().nullable().describe("Brief job description or responsibilities"),
+    url: z.string().describe("The URL to the original job posting (from the 'Apply now' button)"),
+    tags: z.array(z.string()).describe("Array of job tags/technologies/skills"),
     salary: z.string().optional().describe("Salary information if available"),
+    jobType: z.string().optional().describe("Job type (e.g., 'Full Time', 'Part Time')"),
   })).describe("Array of job postings found on the page"),
 });
 
@@ -69,7 +71,15 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
       // Extract job listings
       const result = await stagehand.extract({
         schema: JobExtractionSchema,
-        instruction: `Extract all job postings from the search results page. Look for job titles, company names, locations, descriptions, URLs, and tags. Focus on jobs that match DevRel criteria.`
+        instruction: `Extract all job postings from the search results page. Look for job summary cards in the grid/tile view. For each job card:
+        1. Extract the job title from the card
+        2. Extract the company name (remove @ symbol if present, e.g., '@ Gladia' becomes 'Gladia')
+        3. Extract location and remote status
+        4. Extract job type (Full Time, Part Time, etc.)
+        5. Extract job description/requirements from the detailed view
+        6. Extract the URL from the red/pink 'Apply now' button (this links to the original job posting)
+        7. Extract any tags/technologies mentioned
+        8. Focus on jobs that match DevRel criteria (Developer Relations, DevRel, Developer Advocate)`
       });
       
       if (!result.success) {
@@ -83,7 +93,7 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
       const jobs: JobPosting[] = devrelJobs.map(job => ({
         id: generateStableIdFromString(`hiringcafe:${job.url}`),
         title: job.title,
-        company: job.company,
+        company: job.company.replace(/^@\s*/, ''), // Remove @ symbol if present
         location: job.location || 'Unknown',
         tags: job.tags,
         url: job.url,
@@ -111,23 +121,23 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
     console.log(`[${this.name}] Performing DevRel search...`);
     
     try {
-      // Search for "Developer Relations"
+      // Search for "Developer Relations" and press Enter to submit
       await stagehand.act({
-        instruction: 'Find the search bar and enter "Developer Relations" as the search term'
+        instruction: 'Find the search bar, enter "Developer Relations" as the search term, and press Enter to submit the search'
       });
       
-      // Set the "Posted within" filter to "1 week"
-      await stagehand.act({
-        instruction: 'Find the "Posted within" dropdown filter and change it from "3 months" to "1 week"'
-      });
-      
-      // Submit the search
-      await stagehand.act({
-        instruction: 'Submit the search or press Enter to search for Developer Relations jobs'
-      });
-      
-      // Wait for results to load
+      // Wait for search results to load
       await stagehand.waitForLoad();
+      
+      // Set the "Posted within" filter to "1 week" (optional - can skip if causing issues)
+      try {
+        await stagehand.act({
+          instruction: 'Find the "Posted within" dropdown filter and change it from "3 months" to "1 week"'
+        });
+        await stagehand.waitForLoad();
+      } catch (filterError) {
+        console.log(`[${this.name}] Filter adjustment failed, continuing with default filter:`, filterError);
+      }
       
       console.log(`[${this.name}] DevRel search completed`);
     } catch (error) {
