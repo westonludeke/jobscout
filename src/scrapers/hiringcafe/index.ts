@@ -111,34 +111,62 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
           
           await stagehand.waitForLoad();
           
-          // Extract detailed information from the expanded view
-          const detailedResult = await stagehand.extract({
+          // Extract basic job information from the expanded view
+          const basicResult = await stagehand.extract({
             schema: z.object({
               job: z.object({
                 title: z.string().describe("The job title"),
                 company: z.string().describe("The company name (remove @ symbol if present)"),
-                url: z.string().describe("URL from the 'Apply now' button or 'Apply Directly' button")
+                applyButtonText: z.string().describe("Text of the apply button (e.g., 'Apply Directly', 'Apply now')")
               })
             }),
-            instruction: `Extract detailed information from the expanded job view on the right side:
+            instruction: `Extract basic information from the expanded job view on the right side:
             1. Extract the job title from the expanded view
             2. Extract the company name (remove @ symbol if present, e.g., '@ Gladia' becomes 'Gladia')
-            3. Extract the URL from the red/pink 'Apply now' button or 'Apply Directly' button
-            4. Focus on getting the actual company name and application URL`
+            3. Extract the text of the apply button (e.g., 'Apply Directly', 'Apply now')`
           });
           
-          if (detailedResult.success) {
-            detailedJobs.push({
-              title: detailedResult.data.job.title,
-              company: detailedResult.data.job.company,
-              location: null,
-              description: null,
-              url: detailedResult.data.job.url,
-              tags: [],
-              salary: undefined,
-              jobType: undefined,
-            });
+          if (!basicResult.success) {
+            console.error(`[${this.name}] Failed to extract basic job info for "${jobTitle}"`);
+            continue;
           }
+          
+          // Now click the apply button to get the actual URL
+          try {
+            await stagehand.act({
+              instruction: `Click the "${basicResult.data.job.applyButtonText}" button to open the job application in a new tab`
+            });
+            
+            // Wait for the new tab to open
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Get the URL from the new tab
+            const urlResult = await stagehand.extract({
+              schema: z.object({
+                currentUrl: z.string().describe("The current URL of the page (should be the job application URL)")
+              }),
+              instruction: `Extract the current URL of the page. This should be the job application URL that opened when the apply button was clicked.`
+            });
+            
+            if (urlResult.success) {
+              detailedJobs.push({
+                title: basicResult.data.job.title,
+                company: basicResult.data.job.company,
+                location: null,
+                description: null,
+                url: urlResult.data.currentUrl,
+                tags: [],
+                salary: undefined,
+                jobType: undefined,
+              });
+            } else {
+              console.error(`[${this.name}] Failed to extract URL for "${jobTitle}"`);
+            }
+            
+                     } catch (urlError) {
+             console.error(`[${this.name}] Failed to get URL for "${jobTitle}":`, urlError);
+             // Continue with next job
+           }
           
           // Wait a moment before processing the next job
           await new Promise(resolve => setTimeout(resolve, 1000));
