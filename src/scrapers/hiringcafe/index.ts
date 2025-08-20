@@ -68,31 +68,91 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
       // Search for DevRel jobs
       await this.performDevRelSearch(stagehand);
       
-            // Extract all job cards with basic information
-      const result = await stagehand.extract({
+            // First, extract all job titles to identify DevRel positions
+      const basicResult = await stagehand.extract({
         schema: z.object({
-          jobs: z.array(z.object({
-            title: z.string().describe("The job title"),
-            company: z.string().describe("The company name (remove @ symbol if present)"),
-            url: z.string().describe("The URL to the job posting (from 'Apply now' button or similar)")
-          })).describe("Array of job postings found on the page")
+          jobTitles: z.array(z.object({
+            title: z.string().describe("The job title visible on the card"),
+            isDevRel: z.boolean().describe("Whether this job title contains 'Developer Relations', 'DevRel', or 'Developer Advocate'")
+          })).describe("Array of job titles visible on the page")
         }),
-        instruction: `Extract all job postings from the search results page. For each job card:
+        instruction: `Extract all job titles from the search results page. For each job card:
         1. Extract the job title that's visible on the card
-        2. Extract the company name (remove @ symbol if present, e.g., '@ Gladia' becomes 'Gladia')
-        3. Extract the URL from the 'Apply now' button or job link
-        4. Focus on jobs that match DevRel criteria (Developer Relations, DevRel, Developer Advocate)
-        5. Only include jobs where the title contains 'Developer Relations', 'DevRel', or 'Developer Advocate'`
+        2. Determine if the job title matches DevRel criteria (contains 'Developer Relations', 'DevRel', or 'Developer Advocate')
+        3. Focus on extracting accurate titles to identify DevRel positions`
       });
 
-      if (!result.success) {
-        throw new Error('Failed to extract job data from Hiring Cafe');
+      if (!basicResult.success) {
+        throw new Error('Failed to extract basic job titles from Hiring Cafe');
       }
 
-      console.log(`[${this.name}] Extracted ${result.data.jobs.length} DevRel jobs`);
+      // Filter to only DevRel jobs
+      const devrelTitles = basicResult.data.jobTitles.filter(job => job.isDevRel);
+      
+      console.log(`[${this.name}] Found ${devrelTitles.length} DevRel job titles out of ${basicResult.data.jobTitles.length} total jobs`);
 
-      // Convert to JobPosting format with minimal required fields
-      const jobs: JobPosting[] = result.data.jobs.map(job => ({
+      if (devrelTitles.length === 0) {
+        console.log(`[${this.name}] No DevRel jobs found, returning empty array`);
+        return [];
+      }
+
+      // Now click on each DevRel job card to expand and extract details
+      const detailedJobs: HiringCafeJob[] = [];
+      
+      for (let i = 0; i < Math.min(devrelTitles.length, 5); i++) { // Limit to first 5 to avoid timeouts
+        const jobTitle = devrelTitles[i].title;
+        console.log(`[${this.name}] Extracting details for job ${i + 1}/${Math.min(devrelTitles.length, 5)}: ${jobTitle}`);
+        
+        try {
+          // Click on the job card to expand it
+          await stagehand.act({
+            instruction: `Click on the job card with title "${jobTitle}" to expand the detailed view on the right side`
+          });
+          
+          await stagehand.waitForLoad();
+          
+          // Extract detailed information from the expanded view
+          const detailedResult = await stagehand.extract({
+            schema: z.object({
+              job: z.object({
+                title: z.string().describe("The job title"),
+                company: z.string().describe("The company name (remove @ symbol if present)"),
+                url: z.string().describe("URL from the 'Apply now' button or 'Apply Directly' button")
+              })
+            }),
+            instruction: `Extract detailed information from the expanded job view on the right side:
+            1. Extract the job title from the expanded view
+            2. Extract the company name (remove @ symbol if present, e.g., '@ Gladia' becomes 'Gladia')
+            3. Extract the URL from the red/pink 'Apply now' button or 'Apply Directly' button
+            4. Focus on getting the actual company name and application URL`
+          });
+          
+          if (detailedResult.success) {
+            detailedJobs.push({
+              title: detailedResult.data.job.title,
+              company: detailedResult.data.job.company,
+              location: null,
+              description: null,
+              url: detailedResult.data.job.url,
+              tags: [],
+              salary: undefined,
+              jobType: undefined,
+            });
+          }
+          
+          // Wait a moment before processing the next job
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+        } catch (error) {
+          console.error(`[${this.name}] Failed to extract details for job "${jobTitle}":`, error);
+          // Continue with next job
+        }
+      }
+
+      console.log(`[${this.name}] Successfully extracted details for ${detailedJobs.length} DevRel jobs`);
+      
+      // Convert to JobPosting format
+      const jobs: JobPosting[] = detailedJobs.map(job => ({
         id: generateStableIdFromString(`hiringcafe:${job.url}`),
         title: job.title,
         company: job.company.replace(/^@\s*/, ''), // Remove @ symbol if present
