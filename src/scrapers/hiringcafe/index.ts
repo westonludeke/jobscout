@@ -142,12 +142,20 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
             // Wait for the new tab/window to open and load
             await new Promise(resolve => setTimeout(resolve, 3000));
             
-            // Try to get the URL from the current page
+            // Switch to the newest tab that just opened
+            await stagehand.act({
+              instruction: "Switch to the newest tab or window that just opened after clicking the apply button"
+            });
+            
+            // Wait a moment for the tab switch to complete
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Now try to get the URL from the new tab
             const urlResult = await stagehand.extract({
               schema: z.object({
                 currentUrl: z.string().describe("The current URL of the page (should be the job application URL)")
               }),
-              instruction: `Extract the current URL of the page. This should be the job application URL that opened when the apply button was clicked. Look for the full URL in the browser address bar.`
+              instruction: `Extract the current URL of the page from the browser address bar. This should be the job application URL in the new tab that opened.`
             });
             
             if (urlResult.success && urlResult.data.currentUrl && urlResult.data.currentUrl !== 'null') {
