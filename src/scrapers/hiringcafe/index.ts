@@ -68,29 +68,94 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
       // Search for DevRel jobs
       await this.performDevRelSearch(stagehand);
       
-      // Extract job listings
-      const result = await stagehand.extract({
-        schema: JobExtractionSchema,
-        instruction: `Extract all job postings from the search results page. Look for job summary cards in the grid/tile view. For each job card:
-        1. Extract the job title from the card
-        2. Extract the company name (remove @ symbol if present, e.g., '@ Gladia' becomes 'Gladia')
-        3. Extract location and remote status
-        4. Extract job type (Full Time, Part Time, etc.)
-        5. Extract job description/requirements from the detailed view
-        6. Extract the URL from the red/pink 'Apply now' button (this links to the original job posting)
-        7. Extract any tags/technologies mentioned
-        8. Focus on jobs that match DevRel criteria (Developer Relations, DevRel, Developer Advocate)`
+      // First, extract basic job information from visible cards
+      const basicResult = await stagehand.extract({
+        schema: z.object({
+          jobCards: z.array(z.object({
+            title: z.string().describe("The job title visible on the card"),
+            company: z.string().optional().describe("The company name if visible on the card"),
+            location: z.string().optional().describe("The location if visible on the card"),
+            isDevRel: z.boolean().describe("Whether this job title contains 'Developer Relations', 'DevRel', or 'Developer Advocate'")
+          })).describe("Array of job cards visible on the page")
+        }),
+        instruction: `Extract basic information from all visible job cards on the search results page. For each card:
+        1. Extract the job title that's visible on the card
+        2. Extract company name if visible (remove @ symbol if present)
+        3. Extract location if visible
+        4. Determine if the job title matches DevRel criteria (contains 'Developer Relations', 'DevRel', or 'Developer Advocate')
+        5. Focus on extracting accurate titles to identify DevRel positions`
       });
-      
-      if (!result.success) {
-        throw new Error('Failed to extract job data from Hiring Cafe');
+
+      if (!basicResult.success) {
+        throw new Error('Failed to extract basic job card information');
       }
+
+      // Filter to only DevRel jobs
+      const devrelCards = basicResult.data.jobCards.filter(card => card.isDevRel);
       
-      // Filter jobs by DevRel criteria
-      const devrelJobs = this.filterDevRelJobs(result.data.jobs);
+      console.log(`[${this.name}] Found ${devrelCards.length} DevRel job cards out of ${basicResult.data.jobCards.length} total cards`);
+
+      if (devrelCards.length === 0) {
+        console.log(`[${this.name}] No DevRel jobs found, returning empty array`);
+        return [];
+      }
+
+      // Now extract detailed information for each DevRel job
+      const detailedJobs: HiringCafeJob[] = [];
+      
+      for (let i = 0; i < Math.min(devrelCards.length, 5); i++) { // Limit to first 5 to avoid timeouts
+        const card = devrelCards[i];
+        console.log(`[${this.name}] Extracting details for job ${i + 1}/${Math.min(devrelCards.length, 5)}: ${card.title}`);
+        
+        try {
+          // Click on the job card to expand it
+          await stagehand.act({
+            instruction: `Click on the job card with title "${card.title}" to expand the detailed view`
+          });
+          
+          await stagehand.waitForLoad();
+          
+          // Extract detailed information from the expanded view
+          const detailedResult = await stagehand.extract({
+            schema: z.object({
+              job: z.object({
+                title: z.string().describe("The job title"),
+                company: z.string().describe("The company name (remove @ symbol if present)"),
+                location: z.string().nullable().describe("The job location"),
+                description: z.string().nullable().describe("Job description or requirements"),
+                url: z.string().describe("URL from the 'Apply now' button"),
+                tags: z.array(z.string()).describe("Job tags/technologies"),
+                salary: z.string().optional().describe("Salary information if available"),
+                jobType: z.string().optional().describe("Job type (Full Time, Part Time, etc.)")
+              })
+            }),
+            instruction: `Extract detailed information from the expanded job view on the right side:
+            1. Extract the job title
+            2. Extract the company name (remove @ symbol if present)
+            3. Extract location and remote status
+            4. Extract job type (Full Time, Part Time, etc.)
+            5. Extract job description/requirements
+            6. Extract the URL from the red/pink 'Apply now' button
+            7. Extract any tags/technologies mentioned`
+          });
+          
+          if (detailedResult.success) {
+            detailedJobs.push(detailedResult.data.job);
+          }
+          
+          // Wait a moment before processing the next job
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+        } catch (error) {
+          console.error(`[${this.name}] Failed to extract details for job "${card.title}":`, error);
+          // Continue with next job
+        }
+      }
+
+      console.log(`[${this.name}] Successfully extracted details for ${detailedJobs.length} DevRel jobs`);
       
       // Convert to JobPosting format
-      const jobs: JobPosting[] = devrelJobs.map(job => ({
+      const jobs: JobPosting[] = detailedJobs.map(job => ({
         id: generateStableIdFromString(`hiringcafe:${job.url}`),
         title: job.title,
         company: job.company.replace(/^@\s*/, ''), // Remove @ symbol if present
@@ -104,8 +169,8 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
         salaryUsdMin: undefined,
         salaryUsdMax: undefined,
       }));
-      
-      // Apply additional criteria filtering
+
+            // Apply additional criteria filtering
       return this.filterJobsByCriteria(jobs, criteria);
       
     } catch (error) {
