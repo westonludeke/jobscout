@@ -186,7 +186,7 @@ async function scrapeHiringCafeIfRequested() {
     console.log('Browserbase session established:', session.sessionId);
 
     // Run the scraper with the real session
-    const jobs = await scraper.scrape(appConfig.options);
+    const jobs = await scraper.scrape(appConfig.options, session);
 
     console.log(`Found ${jobs.length} jobs from Hiring Cafe (real scraping):`);
     jobs.forEach((job, index) => {
