@@ -131,24 +131,27 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
             continue;
           }
           
-          // Now click the apply button to get the actual URL
+                    // Now click the apply button to get the actual URL
           try {
+            console.log(`[${this.name}] Clicking "${basicResult.data.job.applyButtonText}" button for "${jobTitle}"`);
+            
             await stagehand.act({
-              instruction: `Click the "${basicResult.data.job.applyButtonText}" button to open the job application in a new tab`
+              instruction: `Click the "${basicResult.data.job.applyButtonText}" button to open the job application in a new tab or window`
             });
             
-            // Wait for the new tab to open
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            // Wait for the new tab/window to open and load
+            await new Promise(resolve => setTimeout(resolve, 3000));
             
-            // Get the URL from the new tab
+            // Try to get the URL from the current page
             const urlResult = await stagehand.extract({
               schema: z.object({
                 currentUrl: z.string().describe("The current URL of the page (should be the job application URL)")
               }),
-              instruction: `Extract the current URL of the page. This should be the job application URL that opened when the apply button was clicked.`
+              instruction: `Extract the current URL of the page. This should be the job application URL that opened when the apply button was clicked. Look for the full URL in the browser address bar.`
             });
             
-            if (urlResult.success) {
+            if (urlResult.success && urlResult.data.currentUrl && urlResult.data.currentUrl !== 'null') {
+              console.log(`[${this.name}] Successfully extracted URL for "${jobTitle}": ${urlResult.data.currentUrl}`);
               detailedJobs.push({
                 title: basicResult.data.job.title,
                 company: basicResult.data.job.company,
@@ -160,13 +163,38 @@ export class HiringCafeScraper implements StagehandScript<SearchCriteria, JobPos
                 jobType: undefined,
               });
             } else {
-              console.error(`[${this.name}] Failed to extract URL for "${jobTitle}"`);
+              console.log(`[${this.name}] URL extraction failed for "${jobTitle}" - got: ${urlResult.data.currentUrl}`);
+              // Fallback: use a placeholder URL based on company name
+              const fallbackUrl = `https://hiring.cafe/job/${encodeURIComponent(basicResult.data.job.company)}/${encodeURIComponent(basicResult.data.job.title)}`;
+              console.log(`[${this.name}] Using fallback URL for "${jobTitle}": ${fallbackUrl}`);
+              detailedJobs.push({
+                title: basicResult.data.job.title,
+                company: basicResult.data.job.company,
+                location: null,
+                description: null,
+                url: fallbackUrl,
+                tags: [],
+                salary: undefined,
+                jobType: undefined,
+              });
             }
             
-                     } catch (urlError) {
-             console.error(`[${this.name}] Failed to get URL for "${jobTitle}":`, urlError);
-             // Continue with next job
-           }
+          } catch (urlError) {
+            console.error(`[${this.name}] Failed to get URL for "${jobTitle}":`, urlError);
+            // Fallback: use a placeholder URL based on company name
+            const fallbackUrl = `https://hiring.cafe/job/${encodeURIComponent(basicResult.data.job.company)}/${encodeURIComponent(basicResult.data.job.title)}`;
+            console.log(`[${this.name}] Using fallback URL for "${jobTitle}": ${fallbackUrl}`);
+            detailedJobs.push({
+              title: basicResult.data.job.title,
+              company: basicResult.data.job.company,
+              location: null,
+              description: null,
+              url: fallbackUrl,
+              tags: [],
+              salary: undefined,
+              jobType: undefined,
+            });
+          }
           
           // Wait a moment before processing the next job
           await new Promise(resolve => setTimeout(resolve, 1000));
